@@ -3,7 +3,7 @@ using LibGit2Sharp;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
-namespace GitLeftoversCleaner;
+namespace DevFolderCleaner;
 
 internal sealed class DeleteOrphanedFoldersCommand : Command<DeleteOrphanedFoldersCommand.Settings>
 {

@@ -1,4 +1,4 @@
-﻿using GitLeftoversCleaner;
+﻿using DevFolderCleaner;
 using Spectre.Console.Cli;
 
 var app = new CommandApp<DeleteOrphanedFoldersCommand>();
