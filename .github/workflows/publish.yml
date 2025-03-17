@@ -1,0 +1,115 @@
+﻿name: Publish
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: get_version
+        run: echo "VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)" >> $GITHUB_OUTPUT
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Publish for Linux
+        run: dotnet publish -c Release -r linux-x64 --self-contained
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binary
+          path: bin/Release/net8.0/linux-x64/publish/
+
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: get_version
+        shell: pwsh
+        run: |
+          $xml = [xml](Get-Content Directory.Build.props)
+          $version = $xml.Project.PropertyGroup.Version
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Publish for Windows
+        run: dotnet publish -c Release -r win-x64 --self-contained
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binary
+          path: bin/Release/net8.0/win-x64/publish/
+          
+  create-release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Extract version
+        id: get_version
+        run: echo "VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)" >> $GITHUB_OUTPUT
+        
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binary
+          path: ./linux-binary
+          
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binary
+          path: ./windows-binary
+          
+      - name: Create Linux zip
+        run: |
+          cd linux-binary
+          zip -r ../DevFolderCleaner-linux-x64-${{ steps.get_version.outputs.VERSION }}.zip .
+          
+      - name: Create Windows zip
+        run: |
+          cd windows-binary
+          zip -r ../DevFolderCleaner-win-x64-${{ steps.get_version.outputs.VERSION }}.zip .
+          
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.VERSION }}
+          name: Release v${{ steps.get_version.outputs.VERSION }}
+          files: |
+            DevFolderCleaner-linux-x64-${{ steps.get_version.outputs.VERSION }}.zip
+            DevFolderCleaner-win-x64-${{ steps.get_version.outputs.VERSION }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
