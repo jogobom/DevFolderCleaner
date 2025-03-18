@@ -66,41 +66,43 @@ jobs:
         with:
           name: windows-binary
           path: bin/Release/net8.0/win-x64/publish/
-          
+
   create-release:
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Extract version
         id: get_version
         run: echo "VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)" >> $GITHUB_OUTPUT
-        
+
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
           name: linux-binary
           path: ./linux-binary
-          
+
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: windows-binary
           path: ./windows-binary
-          
+
       - name: Create Linux zip
         run: |
           cd linux-binary
           zip -r ../DevFolderCleaner-linux-x64-${{ steps.get_version.outputs.VERSION }}.zip .
-          
+
       - name: Create Windows zip
         run: |
           cd windows-binary
           zip -r ../DevFolderCleaner-win-x64-${{ steps.get_version.outputs.VERSION }}.zip .
-          
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

@@ -9,15 +9,16 @@ internal sealed class DeleteOrphanedFoldersCommand : Command<DeleteOrphanedFolde
 {
     public sealed class Settings : CommandSettings
     {
-        [Description("Path to search. Defaults to current directory.")]
-        [CommandArgument(0, "[searchPath]")]
-        public string? SearchPath { get; init; }
+        [Description("Path to search for  build folders.")]
+        [CommandArgument(0, "<searchPath>")]
+        public required string SearchPath { get; init; }
 
         [Description("Just describe what would happen but don't actually do anything. Safe mode.")]
         [CommandOption("-d|--dry-run")]
         public bool DryRun { get; init; }
-        
-        [Description("Ignore any normal checks, such as a dirty repo, and go ahead anyway. Dangerous mode. Combine with --dry-run if you want to safely check what would happen if you forced it.")]
+
+        [Description(
+            "Ignore any normal checks, such as a dirty repo, and go ahead anyway. Dangerous mode. Combine with --dry-run if you want to safely check what would happen if you forced it.")]
         [CommandOption("-f|--force")]
         public bool Force { get; init; }
     }
@@ -28,16 +29,16 @@ internal sealed class DeleteOrphanedFoldersCommand : Command<DeleteOrphanedFolde
         {
             AnsiConsole.MarkupLine("[green]Dry run requested so I'm not going to actually delete anything.[/]");
         }
-        
+
         AnsiConsole.WriteLine($"Current directory: {Directory.GetCurrentDirectory()}");
         AnsiConsole.WriteLine($"Specified search path: {settings.SearchPath}");
-        
+
         var searchPath = settings.SearchPath switch
         {
             null => Directory.GetCurrentDirectory(),
             _ => new DirectoryInfo(settings.SearchPath).FullName
         };
-        
+
         AnsiConsole.WriteLine($"Therefore search will start from {searchPath}");
         AnsiConsole.WriteLine();
 
@@ -51,40 +52,81 @@ internal sealed class DeleteOrphanedFoldersCommand : Command<DeleteOrphanedFolde
         using var repo = new Repository(dotGitDir);
         var repoRoot = new DirectoryInfo(dotGitDir).Parent!;
         var fullDotGitDirPath = Path.GetDirectoryName(Path.Combine(repoRoot.FullName, dotGitDir))!;
-        
+
         AnsiConsole.WriteLine($"Found git repository at {repoRoot}");
-        
+
         if (repo.RetrieveStatus().IsDirty)
         {
             if (!settings.Force)
             {
-                AnsiConsole.MarkupLine($"[red]Error: The repository is dirty, I can't do my job if the index is not up-to-date. I might delete important things. Please commit and clean up the repository, and try again.[/]");
+                AnsiConsole.MarkupLine(
+                    $"[red]Error: The repository is dirty, I can't do my job if the index is not up-to-date. I might delete important things. Please commit and clean up the repository, and try again.[/]");
                 return 1;
             }
-            AnsiConsole.MarkupLine($"[red]Repository is dirty, I might delete important things, but you're forcing me to proceed anyway...[/]");
+
+            AnsiConsole.MarkupLine(
+                $"[red]Repository is dirty, I might delete important things, but you're forcing me to proceed anyway...[/]");
         }
-        
-        var trackedDirectories = repo.Index.Select(entry => Path.Combine(repoRoot.FullName, entry.Path)).GroupBy(Path.GetDirectoryName)
+
+        var trackedDirectories = repo.Index.Select(entry => Path.Combine(repoRoot.FullName, entry.Path))
+            .GroupBy(Path.GetDirectoryName)
             .Where(g => g.Key is not null).Select(g => g.Key!).ToList();
 
-        List<string> toBeDeleted = [];
+        var toBeDeleted = new Queue<string>();
 
         AnsiConsole.Status().Spinner(Spinner.Known.Default).SpinnerStyle(Style.Parse("green")).Start(
-            "Searching...", ctx =>
+            "Searching...", _ =>
             {
-                toBeDeleted = SearchForOrphanedDirectories(fullDotGitDirPath, searchPath, trackedDirectories).ToList();
+                foreach (var orphanedDirectory in SearchForOrphanedDirectories(fullDotGitDirPath, searchPath,
+                             trackedDirectories))
+                {
+                    toBeDeleted.Enqueue(orphanedDirectory);
+                }
             });
 
         if (settings.DryRun)
         {
-            AnsiConsole.MarkupLine("[green]This was a dry run, exiting without deletion.[/]");
+            AnsiConsole.MarkupLine("[green]This was a dry run, exiting without deletion[/]");
             return 0;
         }
 
         AnsiConsole.MarkupLine(
-            $"Do you want to [red]delete {toBeDeleted.Count} orphaned folder{(toBeDeleted.Count == 1 ? "" : "s")}?[/]");
-        
-        // CJP Delete all or Ask about each one in turn 
+            $"Found {toBeDeleted.Count} orphaned folder{(toBeDeleted.Count == 1 ? "" : "s")} that could possibly be deleted");
+
+        while (toBeDeleted.Count > 0)
+        {
+            AnsiConsole.WriteLine();
+
+            var folder = toBeDeleted.Dequeue();
+            AnsiConsole.MarkupLine($"Delete '{folder}'? Type '[yellow]y[/]' for yes, '[green]n[/]' for no, or type '[red]all[/]' to delete all remaining orphans");
+            var response = Console.ReadLine()?.ToLower();
+            if (response != "y" && response != "all")
+            {
+                AnsiConsole.MarkupLine($"[green]Skipping {folder}[/]");
+                continue;
+            }
+
+            if (response == "all")
+            {
+                AnsiConsole.MarkupLine($"[red]REALLY DELETE THEM ALL?!?!?!?[/red] Type order 66 to confirm");
+                if (Console.ReadLine() != "order 66")
+                {
+                    continue;
+                }
+
+                Directory.Delete(folder, true);
+                while (toBeDeleted.Count > 0)
+                {
+                    folder = toBeDeleted.Dequeue();
+                    Directory.Delete(folder, true);
+                    AnsiConsole.WriteLine($"Deleted {folder}");
+                }
+                break;
+            }
+
+            Directory.Delete(folder, true);
+            AnsiConsole.WriteLine($"Deleted {folder}");
+        }
 
         return 0;
     }
@@ -106,7 +148,8 @@ internal sealed class DeleteOrphanedFoldersCommand : Command<DeleteOrphanedFolde
 
         foreach (var subDirectory in new DirectoryInfo(searchPath).EnumerateDirectories())
         {
-            foreach (var orphanedDirectory in SearchForOrphanedDirectories(fullDotGitDirPath, subDirectory.FullName, trackedDirectories))
+            foreach (var orphanedDirectory in SearchForOrphanedDirectories(fullDotGitDirPath, subDirectory.FullName,
+                         trackedDirectories))
             {
                 yield return orphanedDirectory;
             }

@@ -2,6 +2,11 @@
 using Spectre.Console;
 using Spectre.Console.Cli;
 
+Console.CancelKeyPress += (sender, e) =>
+{
+    AnsiConsole.MarkupLine("[red]Operation cancelled by user.[/]");
+};
+
 var app = new CommandApp();
 app.Configure(config =>
 {
@@ -9,8 +14,12 @@ app.Configure(config =>
     config.PropagateExceptions();
     config.ValidateExamples();
 #endif
-    config.AddCommand<DeleteOrphanedFoldersCommand>("deleteOrphans");
-    config.AddCommand<CleanBuildFoldersCommand>("cleanBuilds").WithExample("cleanBuilds", "C:/code");
+    config.AddCommand<CleanBuildFoldersCommand>("cleanBuilds")
+        .WithExample("cleanBuilds", "C:/code");
+    config.AddCommand<DeleteOrphanedFoldersCommand>("deleteOrphans")
+        .WithExample("deleteOrphans", ".")
+        .WithExample("deleteOrphans", "C:/code", "--dry-run")
+        .WithExample("deleteOrphans", "../repos", "--force");
 });
 try
 {
